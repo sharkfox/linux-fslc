@@ -542,12 +542,36 @@ static void armpmu_init(struct arm_pmu *armpmu)
 	};
 }
 
+#define PERF_DEF_OPTS (1 | 16)
+
+static void enable_cpu_counters(void* data)
+{
+    u32 val = 0;
+    // SDER
+    asm volatile("mrc p15, 0, %0, c1, c1, 1" : "=r" (val));
+    printk(KERN_ALERT "Lecture de SDER avant %u\n", val);
+
+    val = 0b11;
+    asm volatile("mcr p15, 0, %0, c1, c1, 1" : : "r" (val));
+    asm volatile("mrc p15, 0, %0, c1, c1, 1" : "=r" (val));
+    printk(KERN_ALERT "Lecture de SDER apres %u\n", val);
+
+	/* Enable user-mode access to counters. */
+	asm volatile("mcr p15, 0, %0, c9, c14, 0" :: "r"(1));
+	/* Program PMU and enable all counters */
+	asm volatile("mcr p15, 0, %0, c9, c12, 0" :: "r"(PERF_DEF_OPTS));
+	asm volatile("mcr p15, 0, %0, c9, c12, 1" :: "r"(0x8000000f));
+}
+
 int armpmu_register(struct arm_pmu *armpmu, int type)
 {
 	armpmu_init(armpmu);
 	pm_runtime_enable(&armpmu->plat_device->dev);
 	pr_info("enabled with %s PMU driver, %d counters available\n",
 			armpmu->name, armpmu->num_events);
+
+	on_each_cpu(enable_cpu_counters, NULL, 1);
+
 	return perf_pmu_register(&armpmu->pmu, armpmu->name, type);
 }
 
